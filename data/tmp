@@ -1,0 +1,15 @@
+# -*- coding: utf-8 -*-
+import os
+import oss2
+
+def upload_file_oss(local_dir):
+    # 阿里云主账号AccessKey拥有所有API的访问权限，风险很高。强烈建议您创建并使用RAM账号进行API访问或日常运维，请登录 https://ram.console.aliyun.com 创建RAM账号。
+    auth = oss2.Auth('LTAI9vJrU28mtEgB', 'f2SRGCQcZaz1Fvgnk7FrtS3SuHLfGY')
+    # Endpoint以杭州为例，其它Region请按实际情况填写。
+    bucket = oss2.Bucket(auth, 'http://oss-cn-beijing.aliyuncs.com', 'grad-proj')
+    # <yourLocalFile>由本地文件路径加文件名包括后缀组成，例如/users/local/myfile.txt
+    file_key = os.path.basename(local_dir)
+    bucket.put_object_from_file(file_key, local_dir)
+    endpoint = f'http://grad-proj.oss-cn-beijing.aliyuncs.com/{file_key}'
+    return endpoint
+upload_file_oss('./tmp.txt')
