@@ -6,8 +6,8 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 
 
 class Config:
-    HOST_NAME = socket.getfqdn(socket.gethostname())
-    HOST_IP = socket.gethostbyname(HOST_NAME)
+    # HOST_NAME = socket.getfqdn(socket.gethostname())
+    # HOST_IP = socket.gethostbyname(HOST_NAME)
 
     # s3 setting
     AWS_REGION_NAME = 'us-east-1'
@@ -24,6 +24,31 @@ class Config:
     # train monitor
     ML_URI = None
     ML_ARTIFACTS = None
+
+    # proj config
+    PROJ_TITLE = os.getenv(
+        'PROJ_TITLE',
+        'BB_KITCHEN'
+    )
+    PROJ_DESC = os.getenv(
+        'PROJ_DESC',
+        'The kitchen in Blackburn'
+    )
+    PROJ_VER = os.getenv(
+        'PROJ_VER',
+        '0.0.1'
+    )
+
+    # DIR config
+    STATIC_DIR = os.getenv(
+        'PROJ_VER',
+        f'{basedir}/static'
+    )
+    BASE_URL = os.getenv(
+        'BASE_URL',
+        '/api/v1'
+    )
+    STATIC_URL = f'{BASE_URL}/static'
 
     # MODEL SETTING
     ML_PARMS = dict(

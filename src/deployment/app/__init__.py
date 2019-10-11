@@ -1,46 +1,69 @@
-from fastapi import FastAPI
-from pydantic import BaseModel, Schema
-from typing import List
-from run import config
-from src.models.predict_model import load_infer_obj
-from src.models.predict_model import predict
-
-
-learner = load_infer_obj(
-    **config.ML_PARMS
+import os
+from fastapi import (
+    FastAPI, Depends, FastAPI, HTTPException
 )
-
-class GenResponse(BaseModel):
-    data: dict
-    msg: str = ''
-    status: str
-
-class Item(BaseModel):
-    data: List[float] = Schema(
-        ..., min_length=1, max_length=1e4,
-        description="The signal size must be greater than one and less than 1e4"
-    )
-    sample_r: int = Schema(
-        ..., gt=0, lt=1e4,
-        description="The sample rate must be greater than zero and less than 1e4")
-
+from sqlalchemy.orm import Session
+from starlette.requests import Request
+from starlette.responses import Response
+from starlette.staticfiles import StaticFiles
+from config import config_cls, basedir
 from starlette.middleware.cors import CORSMiddleware
 
-app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_methods=('GET', 'POST', 'OPTIONS'))
+
+config = config_cls[os.getenv('APP_ENV', 'default')]
 
 
-@app.get("/")
-async def read_root():
-    return {"Hello": "World"}
+def _from_config(config_dict, obj):
+    if isinstance(obj, str):
+        # not applicable for right now
+        # obj = import_string(obj)
+        pass
+    for key in dir(obj):
+        if key.isupper():
+            config_dict[key] = getattr(obj, key)
 
+base_url = config.BASE_URL
+app = FastAPI(
+    title=config.PROJ_TITLE,
+    description=config.PROJ_DESC,
+    version=config.PROJ_VER,
+    openapi_url=f"{base_url}/openapi.json",
+    docs_url=f"{base_url}/docs",
+)
+app.mount(config.STATIC_URL, StaticFiles(
+    directory=config.STATIC_DIR), name="static")
 
-@app.get("/items/{item_id}")
-async def read_item(item_id: int, q: str = None):
-    return {"item_id": item_id, "q": q}
+origins = [
+    "http://localhost.tiangolo.com",
+    "https://localhost.tiangolo.com",
+    "http:localhost",
+    "http:localhost:8000",
+]
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@app.post("/item/predicton", response_model=GenResponse)
-async def predict_item(item: Item):
-    resp = predict(learner, item)
-    return GenResponse(**resp)
+# @app.middleware("http")
+# async def db_session_middleware(request: Request, call_next):
+#     from .models import SessionLocal
+#     response = Response("Internal server error", status_code=500)
+#     try:
+#         request.state.db = SessionLocal()
+#         response = await call_next(request)
+#     finally:
+#         request.state.db.close()
+#     return response
+
+from .routers import scoring_service
+app.include_router(
+    scoring_service.router,
+    prefix="/score",
+    tags=["scoring_service"],
+    # dependencies=[Depends(get_token_header)],
+    responses={404: {"description": "Not found"}},
+)
