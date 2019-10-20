@@ -1,4 +1,4 @@
-import os
+import os, functools
 from fastapi import (
     FastAPI, Depends, FastAPI, HTTPException
 )
@@ -9,6 +9,13 @@ from starlette.staticfiles import StaticFiles
 from config import config_cls, basedir
 from starlette.middleware.cors import CORSMiddleware
 
+# @functools.lru_cache(maxsize=2048, typed=False)
+# def get_models(model_config: dict={'cls_mdl': None, 'growning_mdl': None, 'cropping_mdl': None}):
+#     from fastai.vision import *
+#     return {
+#         model_name: load_learner(model_config[model_name])
+#         for model_name in model_config
+#     }
 
 config = config_cls[os.getenv('APP_ENV', 'default')]
 
@@ -34,10 +41,12 @@ app.mount(config.STATIC_URL, StaticFiles(
     directory=config.STATIC_DIR), name="static")
 
 origins = [
-    "http://localhost.tiangolo.com",
-    "https://localhost.tiangolo.com",
-    "http:localhost",
-    "http:localhost:8000",
+    # "http://localhost.tiangolo.com",
+    # "https://localhost.tiangolo.com",
+    # "http:localhost",
+    # "http:localhost:8000",
+    # 'http://10.0.0.56:5000'
+    '*'
 ]
 
 app.add_middleware(
@@ -62,7 +71,7 @@ app.add_middleware(
 from .routers import scoring_service
 app.include_router(
     scoring_service.router,
-    prefix="/score",
+    prefix=f"{base_url}/score",
     tags=["scoring_service"],
     # dependencies=[Depends(get_token_header)],
     responses={404: {"description": "Not found"}},
