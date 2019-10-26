@@ -23,6 +23,6 @@ affine6p
 descartes
 fiona
 rasterio
-
+pandas==0.24.2
 
 
