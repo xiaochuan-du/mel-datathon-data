@@ -24,7 +24,7 @@ from config import config_cls
 config = config_cls[os.getenv('ENV', 'default')]
 
 ################################# Preprocessing Functions #################################
-bucket = config.DATA_ROOT / 'interim'
+bucket = config.DATA_ROOT / 'interim' / 'sugar_files_FLI'
 
 
 def preprocess_pngs():

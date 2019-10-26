@@ -86,7 +86,13 @@ async def get_tiles(tile_query: TileQuery):
     (148.68, -20.57),
     (148.66, -20.57)]},"properties": {"name": ""}}
     """    
-    tiles_info = ROI_tifs(tile_query.geo_json)
+    ROI_large = {"type": "Feature","geometry": {"type": "Polygon",
+    "coordinates": [[148.60709030303114, -20.540043246963264],
+      [148.69607543743531, -20.539590412428996],
+      [148.6865658493269, -20.595756032466892],
+      [148.6275658455197,-20.606209452942387]]},"properties": {"name": ""}}
+    # tile_query.geo_json
+    tiles_info = ROI_tifs(ROI_large)
     return [
         TileInfo(timestamp=ts, file_uri=tiles_info['png_path'][ts])
         for ts in tiles_info['png_path']
@@ -104,6 +110,13 @@ DEMO_DATA = [[0,0,5],[0,1,1],[0,2,0],[0,3,0],[0,4,0],[0,5,0],[0,6,0],[0,7,0],[0,
 async def get_heatmap(tile_query: TileQuery):
     """get_tiles for fe
     """
+    from src.models.predict_model import Predictor
+    tiles_info = ROI_tifs(tile_query.geo_json)
+    model = Predictor(tiles_info, im_mask=None)
+    x = model.run(2)
+    hm = model.gen_heatmaps()
+
+
     return [
         HeatmapInfo(timestamp=1571546212832, heatmap=DEMO_DATA),
         HeatmapInfo(timestamp=1571542212832, heatmap=DEMO_DATA),

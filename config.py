@@ -28,11 +28,11 @@ class Config:
     # proj config
     PROJ_TITLE = os.getenv(
         'PROJ_TITLE',
-        'BB_KITCHEN'
+        'MEL_DATATHRON'
     )
     PROJ_DESC = os.getenv(
         'PROJ_DESC',
-        'The kitchen in Blackburn'
+        'Melbourne Datathon: http://www.datasciencemelbourne.com/datathon/'
     )
     PROJ_VER = os.getenv(
         'PROJ_VER',
