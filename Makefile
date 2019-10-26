@@ -1,4 +1,4 @@
-.PHONY: clean data lint requirements sync_data_to_s3 sync_data_from_s3
+.PHONY: clean data lint requirements sync_data_to_s3 sync_data_from_s3 debug
 
 #################################################################################
 # GLOBALS                                                                       #
@@ -9,6 +9,7 @@ BUCKET = [OPTIONAL] your-bucket-for-syncing-data (do not include 's3://')
 PROFILE = default
 PROJECT_NAME = sugarcane_ai
 PYTHON_INTERPRETER = python3
+IMAGE_VER = stadb:0.1
 
 ifeq (,$(shell which conda))
 HAS_CONDA=False
@@ -24,6 +25,10 @@ endif
 requirements: test_environment
 	$(PYTHON_INTERPRETER) -m pip install -U pip setuptools wheel
 	$(PYTHON_INTERPRETER) -m pip install -r requirements.txt
+
+## Install Python Dependencies
+debug:
+	docker run -it --rm -v `pwd`:/opt -p 5000:5000 $(IMAGE_VER) /bin/bash
 
 ## Make Dataset
 data: requirements

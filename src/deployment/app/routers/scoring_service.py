@@ -9,6 +9,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from sqlalchemy.sql.expression import func
 from pydantic import BaseModel, conint, confloat
+from src.data.data_reformat import ROI_tifs
 
 router = APIRouter()
 
@@ -74,11 +75,21 @@ class TileQuery(BaseModel):
 @router.post("/tiles", response_model=List[TileInfo])
 async def get_tiles(tile_query: TileQuery):
     """get_tiles for fe
-    """
+        ROI_large = {"type": "Feature","geometry": {"type": "Polygon",
+    "coordinates": [[148.60709030303114, -20.540043246963264],
+      [148.69607543743531, -20.539590412428996],
+      [148.6865658493269, -20.595756032466892],
+      [148.6275658455197,-20.606209452942387]]},"properties": {"name": ""}}
+    ROI_one = {"type": "Feature","geometry": {"type": "Polygon",
+        "coordinates": [(148.66, -20.55),
+    (148.68, -20.55),
+    (148.68, -20.57),
+    (148.66, -20.57)]},"properties": {"name": ""}}
+    """    
+    tiles_info = ROI_tifs(tile_query.geo_json)
     return [
-        TileInfo(timestamp=1571546212832, file_uri='static/1536-1024-TCI-2017-03-12.png'),
-        TileInfo(timestamp=1571546212832, file_uri='static/1536-1024-TCI-2017-04-01.png'),
-        TileInfo(timestamp=1571546212832, file_uri='static/1536-1024-TCI-2017-05-01.png')
+        TileInfo(timestamp=ts, file_uri=tiles_info['png_path'][ts])
+        for ts in tiles_info['png_path']
     ]
 
 class HeatmapInfo(BaseModel):
