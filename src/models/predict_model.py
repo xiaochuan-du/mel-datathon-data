@@ -13,6 +13,7 @@ import gc
 import concurrent
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import Pool, cpu_count
+import datetime
 
 # scoring
 from functools import reduce,partial
@@ -33,10 +34,13 @@ class Predictor:
         self.ts_cls = [] # clusters
         self.ts = [] # time series of each pixel
         self.mean_ts = [] # time series mean of each cluster
-        self.prediction = []
+        self.prediction = pd.DataFrame({})
 
         for date, file in images.items():
-            self.dates.append(date)
+            if type(date) == 'str':
+                self.dates.append(date)
+            else:
+                self.dates.append(datetime.datetime.fromtimestamp(date / 1000))
             self.files.append(file)
             
         self.df = pd.DataFrame({
@@ -53,7 +57,7 @@ class Predictor:
         train_df = df.iloc[0:len_train]
         val_df = df.iloc[len_train:-1]
         return train_df, val_df
-
+    
     def _tslize(self):
         '''
             convert images to time series
@@ -64,7 +68,7 @@ class Predictor:
             if self.im_mask is None:
                 ims.append(im_tile)
             else:
-                data_mask = (np.array(self.im_mask)[:, :, 3] / 255).reshape((512,512,1))
+                data_mask = (np.array(self.im_mask)[:, :, 3] / 255).reshape((im_tile.size[1],im_tile.size[0],1))
                 data_im = np.array(im_tile)
                 ims.append(Image.fromarray(data_im*data_mask.astype('uint8')))
             # ims.append(im_tile)
@@ -88,9 +92,10 @@ class Predictor:
         new_df = pd.DataFrame({'ds': full_ds}).merge(df, how='left', on='ds')
         new_df['y'] = new_df.set_index('ds').y.interpolate(method='time').tolist()
         if val:
-            t_df = self._split(new_df, 0.9) 
+            t_df, v_df = split(new_df, 0.9) 
         else:
             t_df = new_df
+
         new_v_df = pd.DataFrame({
             'ds': pd.date_range(str(t_df.ds.max() + pd.Timedelta(1, 'D')), periods=self.predict_len, freq='D')
         }) 
@@ -231,8 +236,9 @@ def tensor2score(ts, datas):
     df = df.assign(
         tgt_score=df.tgt_score.interpolate(method='time')
     )
-    df.loc[max(ups+downs):, 'tgt_score'] = np.NaN
-    df.loc[max(ups+downs):, 'tgt_phase'] = np.NaN
+    if (ups + downs):
+        df.loc[max(ups+downs):, 'tgt_score'] = np.NaN
+        df.loc[max(ups+downs):, 'tgt_phase'] = np.NaN
     return df, ups, downs
 
 def draw_score(df, ups, downs, ax):

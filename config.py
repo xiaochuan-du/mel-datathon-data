@@ -42,7 +42,7 @@ class Config:
     # DIR config
     STATIC_DIR = os.getenv(
         'PROJ_VER',
-        f'{basedir}/static'
+        f'{basedir}/data/interim/sugar_files_FLI/'
     )
     BASE_URL = os.getenv(
         'BASE_URL',
