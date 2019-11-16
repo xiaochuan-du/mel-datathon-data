@@ -9,9 +9,12 @@ import os
 import pickle
 import affine6p
 import matplotlib
+import functools
 import time
 import datetime
+import json
 from matplotlib import pyplot as plt
+from PIL import Image
 
 import rasterio.mask as rmask
 from rasterio.merge import merge
@@ -25,7 +28,7 @@ config = config_cls[os.getenv('ENV', 'default')]
 
 ################################# Preprocessing Functions #################################
 bucket = config.DATA_ROOT / 'interim' / 'sugar_files_FLI'
-
+result_format = "jpeg" # or png
 
 def preprocess_pngs():
     """Preprocess geo data and save intermediate results on harddisk. Run once (if files are generated, no need to run)
@@ -35,21 +38,24 @@ def preprocess_pngs():
     return
 
 ################################ This is the main function ################################
-def ROI_tifs(ROI):
+@functools.lru_cache()
+def ROI_tifs(ROI, masked=True):
     """Based on input ROI and preprocess files, find relevant satellite images and clip them with ROI. 
     Save the clipped images on harddrive and return path informaiton and timestamp information
 
     Parameters
     ----------
-    ROI : dict (json), need to contain the below information (as required by front end)
+    ROI : path to ROI json file, need to contain the below information (as required by front end)
         {"geometry": {"type": "Polygon",
     "coordinates": [[148.60709030303114, -20.540043246963264],
       [148.69607543743531, -20.539590412428996],
       [148.6865658493269, -20.595756032466892],
       [148.6275658455197,-20.606209452942387]]}}
-
     """
     # Prepare shared datasets
+    # with open(ROI, "r") as fp:
+    #     ROI=json.load(fp)
+    ROI=json.loads(ROI)
     corners_geo, _, tif_list, xy_w_geo_wo_tif = load_preprocessed()
     ROI = Polygon(ROI["geometry"]["coordinates"])
     ROI_tiles_XY = pair_ROI_to_tiles(ROI, corners_geo)
@@ -65,7 +71,7 @@ def ROI_tifs(ROI):
     tasks = tif_list[tif_list.index.isin(ROI_tiles_XY)] 
 
     if len(ROI_tiles_XY)==1:
-        tif_infos = ROI_one_tile([mapping(ROI)], ROI_tiles_XY[0][0], ROI_tiles_XY[0][1], tasks['date'].values, corners_geo, save_format='png')
+        tif_infos = ROI_one_tile([mapping(ROI)], ROI_tiles_XY[0][0], ROI_tiles_XY[0][1], tasks['date'].values, corners_geo, save_format=result_format, masked=masked)
 
     else:
         print("Loading satellite images for the selected zone...")
@@ -73,11 +79,11 @@ def ROI_tifs(ROI):
         # For each tile, clip the tile with ROI and save as TIF
         for xy in ROI_tiles_XY:
             task = tasks.loc[xy]
-            _ = ROI_one_tile([mapping(ROI)], xy[0], xy[1], task['date'].values, corners_geo)
+            _ = ROI_one_tile([mapping(ROI)], xy[0], xy[1], task['date'].values, corners_geo, masked=masked)
         for unix_x in dates_unix:
             merged_array = merge_tiles(ROI_tiles_XY, unix_x, tif_folder = f"{bucket}/results/single")
-            tif_infos[unix_x] = f"{bucket}/results/png/{unix_x}.png"
-            save_png(merged_array, tif_infos[unix_x])
+            tif_infos[unix_x] = f"{bucket}/results/final/{unix_x}.{result_format}"
+            save_img(merged_array, tif_infos[unix_x])
         print("Finished!")
     
     return {"png_path":tif_infos, "start_date":dates_unix[0], "end_date":dates_unix[-1], "all_dates":dates_unix}
@@ -143,11 +149,11 @@ def pngS_to_geotifS(png_folder="TCI_tiles", affine_option='4corners', mask_folde
             tile_x, tile_y, tile_date = row['x'], row['y'], row['date']
             png_name = f"{tile_x}-{tile_y}-TCI-{tile_date}.png"
             save_name = f"{tile_x}-{tile_y}-TCI-{tile_date}.tif"
-            field_mask_path = f"{bucket}/{mask_folder}/mask-x{tile_x}-y{tile_y}.png"
+            #field_mask_path = f"{bucket}/{mask_folder}/mask-x{tile_x}-y{tile_y}.png"
 
             # Open png file corresponding to the xy of tiles, return the array of raster values (3*512*512) with sugarcane field mask applied
             with rasterio.open(f"{bucket}/{png_folder}/{png_name}", "r") as src:
-                array_data = src.read() * load_filed_mask(field_mask_path)
+                array_data = src.read()# * load_filed_mask(field_mask_path)
 
             # Save array as geotif
             array_to_geotif(array_data, save_name, all_corners.loc[(tile_x, tile_y), "corners"][:4], affine_option=affine_option)
@@ -157,7 +163,7 @@ def pngS_to_geotifS(png_folder="TCI_tiles", affine_option='4corners', mask_folde
     return
 
 ################################# Geo Functions #################################
-def ROI_one_tile(ROI, tile_x, tile_y, dates, corners_geo, source_folder="intermediate/geotifs", mask_folder="masks", save_format='tif'):
+def ROI_one_tile(ROI, tile_x, tile_y, dates, corners_geo, source_folder="intermediate/geotifs", mask_folder="masks", save_format='tif', masked=True):
     """Clip all geoTIFs (timesteps) for an tile by the ROI polygon. 
        Save the clipped raster arrays as geotif.
     """
@@ -173,22 +179,37 @@ def ROI_one_tile(ROI, tile_x, tile_y, dates, corners_geo, source_folder="interme
 
     # Use the mask and indices to select rasters of all TIFs
     results = {}
+
+    # Find the indices of non-zero rasters on the rectangular intersection this tile and ROI
+    source_path = f"{bucket}/{source_folder}/{tile_x}-{tile_y}-TCI-{dates[0]}.tif"
+    ROI_full_array = ROI_on_geotif(ROI, source_path, False)[0]
+    nonzeros = bbox2(ROI_full_array.sum(axis=0)) #FIXME: this will also fix the error with rasterio
+
+    # Load sugarcane field mask
+    if masked:
+        field_mask_path = f"{bucket}/{mask_folder}/mask-x{tile_x}-y{tile_y}.png"
+        field_mask_array = load_filed_mask(field_mask_path)[nonzeros[0]:nonzeros[1], nonzeros[2]:nonzeros[3]]
+    else:
+        field_mask_array = 1
+        
     for x in dates:
         unix_x = int(time.mktime(datetime.datetime.strptime(x, "%Y-%m-%d").timetuple()) * 1000)
         source_path = f"{bucket}/{source_folder}/{tile_x}-{tile_y}-TCI-{x}.tif"
 
-        polygon_array = ROI_on_geotif(ROI, source_path, True)[0]
+        with rasterio.open(source_path, "r") as src:
+            polygon_array = src.read()
+        polygon_array = polygon_array[:, nonzeros[0]:nonzeros[1], nonzeros[2]:nonzeros[3]] * field_mask_array
 
         if save_format=='tif':
             array_to_geotif(polygon_array, f"{tile_x}-{tile_y}-{unix_x}.tif", intersection_corner, 
             save_folder=f"results/single", affine_option='4corners')            
-        elif save_format=='png':
-            save_png(polygon_array, f"{bucket}/results/png/{unix_x}.png")
+        elif save_format==result_format:
+            save_img(polygon_array, f"{bucket}/results/final/{unix_x}.{result_format}")
         else:
             print("Save format not supported, aborting.")
             return
 
-        results[unix_x] = f"results/png/{unix_x}.png"
+        results[unix_x] = f"results/final/{unix_x}.{result_format}"
 
     return results
 
@@ -221,7 +242,7 @@ def ROI_on_geotif(ROI, geotif_path, crop):
         out_image, out_transform = rasterio.mask.mask(src, ROI, crop=crop)
         out_meta = src.meta
 
-    # Update TIF value        
+    # Update TIF meta
     out_meta.update({"driver": "GTiff",
                      "height": out_image.shape[1],
                      "width": out_image.shape[2],
@@ -267,7 +288,7 @@ def array_to_geotif(array_data, tif_name, tile_corner, save_folder=f"intermediat
         print(f"Affine option {affine_option} not supported...Aborting")
         return
 
-    # Save png as geoTIF
+    # Save array as geoTIF
     with rasterio.open(f"{bucket}/{save_folder}/{tif_name}", 'w', driver='GTiff', height=array_data.shape[1], 
                         width=array_data.shape[2], count=3, dtype=array_data.dtype, crs='EPSG:4326', 
                         transform=transform) as dst:
@@ -347,8 +368,8 @@ def GetBearing(pointA, pointB):
 def swapLatLon(coord):
     return (coord[1],coord[0])
 
-def save_png(input_array, save_path):
-    """Transpose a (3 or 4, x, y) array into (x, y, 3 or 4) array and save it as png.
+def save_img(input_array, save_path):
+    """Transpose a (3 or 4, x, y) array into (x, y, 3 or 4) array and save it as an image.
     
     Parameters
     ----------
@@ -357,4 +378,6 @@ def save_png(input_array, save_path):
     save_path : [type]
         [description]
     """
-    matplotlib.image.imsave(save_path, np.transpose(input_array, (1, 2, 0)))
+    #matplotlib.image.imsave(save_path, np.transpose(input_array, (1, 2, 0)))
+    #imsave(save_path, np.transpose(input_array, (1, 2, 0)))
+    Image.fromarray(np.transpose(input_array, (1, 2, 0))).save(save_path)

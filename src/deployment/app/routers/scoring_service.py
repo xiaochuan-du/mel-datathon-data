@@ -72,7 +72,7 @@ async def get_tiles(tile_query: TileQuery):
     (148.68, -20.57),
     (148.66, -20.57)]},"properties": {"name": ""}}
     """
-    tiles_info = ROI_tifs(tile_query.dict())
+    tiles_info = ROI_tifs(json.dumps(tile_query.dict()))
     res = []
     for ts in tiles_info['png_path']:
         img_path = tiles_info['png_path'][ts]
@@ -89,7 +89,7 @@ class HeatmapInfo(BaseModel):
 async def get_heatmap(tile_query: TileQuery):
     """get_tiles for fe
     """
-    tiles_info = ROI_tifs(tile_query.dict())
+    tiles_info = ROI_tifs(json.dumps(tile_query.dict()))
     res = {}
     for ts in tiles_info['png_path']:
         img_path = tiles_info['png_path'][ts]
