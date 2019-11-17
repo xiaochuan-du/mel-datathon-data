@@ -16,7 +16,7 @@ from multiprocessing import Pool, cpu_count
 import datetime
 
 # scoring
-from functools import reduce,partial
+from functools import reduce, partial, lru_cache
 from scipy.signal import find_peaks
 
 
@@ -150,12 +150,12 @@ class Predictor:
         res_df = self.df[['ds']].merge(res_df, how='left', left_on='ds',right_on='date').drop(columns='date')
         self.prediction = res_df
         return res_df
-        
     def gen_heatmaps(self):
         op_files = []
         heatmaps = []
         xs = ys = np.linspace(0, self.im_size - 1, self.im_size)
         xv, yv = np.meshgrid(xs, ys, indexing='ij')
+        print(self.prediction.head().T)
         for _, row in self.prediction.iterrows():
             val = [
                 row[f'cls_{self.ts_cls[i]}'] if row[f'cls_{self.ts_cls[i]}'] == row[f'cls_{self.ts_cls[i]}'] else -1 
@@ -170,7 +170,24 @@ class Predictor:
                 'timestamp': time_stamp,
                 'heatmap': np.stack([xv, yv, np.array(val).reshape(self.im_size, self.im_size)], 2)
             })
-        return heatmaps
+        line_res = {}
+        for item0 in heatmaps:
+            ts = item0['timestamp']
+            for item1 in item0['heatmap'].reshape(item0['heatmap'].shape[0]*item0['heatmap'].shape[1], 3).tolist():
+                # print(item1)
+                x, y, val = item1
+                loc_str = f'{int(x)}_{int(y)}'
+                if loc_str in line_res:
+                    pass
+                else:
+                    line_res[loc_str] = {}
+                if "x_value" not in line_res[loc_str]: 
+                    line_res[loc_str]["x_value"] = []
+                if "y_value" not in line_res[loc_str]: 
+                    line_res[loc_str]["y_value"] = []
+                line_res[loc_str]["x_value"].append(ts)
+                line_res[loc_str]["y_value"].append(val)
+        return heatmaps, line_res
     
 def num_cpus()->int:
     "Get number of cpus"

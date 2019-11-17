@@ -84,8 +84,15 @@ class HeatmapInfo(BaseModel):
     timestamp: conint(gt=0, lt=1e14) # invalid for earlier than 1970.01.01
     heatmap: List[List[float]] # [[x, y, val], ]
 
+class HeatmapInfo(BaseModel):
+    timestamp: conint(gt=0, lt=1e14) # invalid for earlier than 1970.01.01
+    heatmap: List[List[float]]
 
-@router.post("/heatmap", response_model=List[HeatmapInfo])
+class PlotInfo(BaseModel):
+    heatmap: List[HeatmapInfo]
+    lineplot: dict # [[x, y, val], ]
+
+@router.post("/heatmap", response_model=PlotInfo)
 async def get_heatmap(tile_query: TileQuery):
     """get_tiles for fe
     """
@@ -98,14 +105,17 @@ async def get_heatmap(tile_query: TileQuery):
 
     model = Predictor(res, im_mask=None)
     model.run(2)
-    hm = model.gen_heatmaps()
-    return [
-        HeatmapInfo(
-            timestamp=info['timestamp'],
-            heatmap=info['heatmap'].reshape(info['heatmap'].shape[0]*info['heatmap'].shape[1], 3).tolist()
-        )
-        for info in hm
-    ]
+    hm, line_res = model.gen_heatmaps()
+    return PlotInfo(
+        heatmap=[
+            HeatmapInfo(
+                timestamp=info['timestamp'],
+                heatmap=info['heatmap'].reshape(info['heatmap'].shape[0]*info['heatmap'].shape[1], 3).tolist()
+            )
+            for info in hm
+        ],
+        lineplot=line_res
+    )
 
 # class ChartPoint(BaseModel):
 #     timestamp: conint(gt=0, lt=1e14) # invalid for earlier than 1970.01.01
