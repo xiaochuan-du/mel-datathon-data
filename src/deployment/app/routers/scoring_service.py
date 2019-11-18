@@ -96,6 +96,8 @@ class PlotInfo(BaseModel):
 async def get_heatmap(tile_query: TileQuery):
     """get_tiles for fe
     """
+    return json.load(
+        open('data_demo.json', 'r'))
     tiles_info = ROI_tifs(json.dumps(tile_query.dict()))
     res = {}
     for ts in tiles_info['png_path']:
@@ -106,6 +108,16 @@ async def get_heatmap(tile_query: TileQuery):
     model = Predictor(res, im_mask=None)
     model.run(2)
     hm, line_res = model.gen_heatmaps()
+    json.dump(PlotInfo(
+        heatmap=[
+            HeatmapInfo(
+                timestamp=info['timestamp'],
+                heatmap=info['heatmap'].reshape(info['heatmap'].shape[0]*info['heatmap'].shape[1], 3).tolist()
+            )
+            for info in hm
+        ],
+        lineplot=line_res
+    ).dict(), open('data_demo.json', 'w'))
     return PlotInfo(
         heatmap=[
             HeatmapInfo(

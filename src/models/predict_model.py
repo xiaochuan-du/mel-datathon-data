@@ -155,7 +155,6 @@ class Predictor:
         heatmaps = []
         xs = ys = np.linspace(0, self.im_size - 1, self.im_size)
         xv, yv = np.meshgrid(xs, ys, indexing='ij')
-        print(self.prediction.head().T)
         for _, row in self.prediction.iterrows():
             val = [
                 row[f'cls_{self.ts_cls[i]}'] if row[f'cls_{self.ts_cls[i]}'] == row[f'cls_{self.ts_cls[i]}'] else -1 
@@ -176,6 +175,7 @@ class Predictor:
             for item1 in item0['heatmap'].reshape(item0['heatmap'].shape[0]*item0['heatmap'].shape[1], 3).tolist():
                 # print(item1)
                 x, y, val = item1
+                y = self.im_size - y - 1
                 loc_str = f'{int(x)}_{int(y)}'
                 if loc_str in line_res:
                     pass
