@@ -1,17 +1,20 @@
 from typing import List
+from fbprophet import Prophet
 import os
 import json
 from fastapi import (
     Depends, FastAPI, HTTPException,
     APIRouter, Query, UploadFile, File
 )
+import numpy as np
+import pandas as pd
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 from starlette.responses import Response
 from sqlalchemy.sql.expression import func
 from pydantic import BaseModel, conint, confloat
 from src.data.data_reformat import ROI_tifs
-from src.models.predict_model import Predictor
+from src.models.predict_model import Predictor, tensor2score
 from config import config_cls, basedir
 
 
@@ -84,20 +87,20 @@ class HeatmapInfo(BaseModel):
     timestamp: conint(gt=0, lt=1e14) # invalid for earlier than 1970.01.01
     heatmap: List[List[float]] # [[x, y, val], ]
 
-class HeatmapInfo(BaseModel):
-    timestamp: conint(gt=0, lt=1e14) # invalid for earlier than 1970.01.01
-    heatmap: List[List[float]]
+#class HeatmapInfo(BaseModel):
+ #   timestamp: conint(gt=0, lt=1e14) # invalid for earlier than 1970.01.01
+  #  heatmap: List[List[float]]
 
 class PlotInfo(BaseModel):
     heatmap: List[HeatmapInfo]
     lineplot: dict # [[x, y, val], ]
 
-@router.post("/heatmap", response_model=PlotInfo)
+@router.post("/heatmap", response_model=List[HeatmapInfo])
 async def get_heatmap(tile_query: TileQuery):
     """get_tiles for fe
     """
-    return json.load(
-        open('data_demo.json', 'r'))
+    #return json.load(
+    #   open('data_demo.json', 'r'))
     tiles_info = ROI_tifs(json.dumps(tile_query.dict()))
     res = {}
     for ts in tiles_info['png_path']:
@@ -108,27 +111,22 @@ async def get_heatmap(tile_query: TileQuery):
     model = Predictor(res, im_mask=None)
     model.run(2)
     hm, line_res = model.gen_heatmaps()
-    json.dump(PlotInfo(
-        heatmap=[
-            HeatmapInfo(
-                timestamp=info['timestamp'],
-                heatmap=info['heatmap'].reshape(info['heatmap'].shape[0]*info['heatmap'].shape[1], 3).tolist()
-            )
-            for info in hm
-        ],
-        lineplot=line_res
-    ).dict(), open('data_demo.json', 'w'))
-    return PlotInfo(
-        heatmap=[
-            HeatmapInfo(
-                timestamp=info['timestamp'],
-                heatmap=info['heatmap'].reshape(info['heatmap'].shape[0]*info['heatmap'].shape[1], 3).tolist()
-            )
-            for info in hm
-        ],
-        lineplot=line_res
-    )
-
+    #json.dump(PlotInfo(
+     #   heatmap=[
+      #      HeatmapInfo(
+       #         timestamp=info['timestamp'],
+        #        heatmap=info['heatmap'].reshape(info['heatmap'].shape[0]*info['heatmap'].shape[1], 3).tolist()
+         #   )
+          #  for info in hm
+       # ],
+        #lineplot=line_res
+    #).dict(), open('data_demo.json', 'w'))
+    return  [
+                HeatmapInfo(
+                    timestamp=info['timestamp'],
+                    heatmap=info['heatmap'].reshape(info['heatmap'].shape[0]*info['heatmap'].shape[1], 3).tolist()
+                ) for info in hm
+            ]   
 # class ChartPoint(BaseModel):
 #     timestamp: conint(gt=0, lt=1e14) # invalid for earlier than 1970.01.01
 #     y: List[float] # [[x, y, val], ]
@@ -142,3 +140,44 @@ async def get_heatmap(tile_query: TileQuery):
 #         HeatmapInfo(timestamp=1571542212832, heatmap=DEMO_DATA),
 #         HeatmapInfo(timestamp=15715468212832, heatmap=DEMO_DATA)
 #     ]
+class Line(BaseModel):
+    time_stamp: List[conint(gt=0, lt=1e14)]
+    score: List[float]
+class LineQuery(BaseModel):
+    ds: List[conint(gt=0, lt=1e14)]
+    y: List[float]
+
+
+@router.post("/predict", response_model=Line)
+async def get_predict_line(line_query: LineQuery):
+    v_periods = 180
+    df = pd.DataFrame({
+            'ds': pd.to_datetime(np.array(line_query.dict()['ds']) * (10 ** 6)),
+            'y': line_query.dict()['y']
+            }).sort_values(by='ds')
+    periods = (df.ds.max() - df.ds.min()).days + 1
+    full_ds = pd.date_range(str(df.ds.min()), periods=periods, freq='D')
+    new_df = pd.DataFrame({'ds': full_ds}).merge(df, how='left', on='ds')
+    new_df['y'] = new_df.set_index('ds').y.interpolate(method='time').tolist()
+    val = False
+    if val:
+        t_df, v_df = split(new_df, 0.9)
+    else:
+        t_df = new_df
+
+    new_v_df = pd.DataFrame({
+        'ds': pd.date_range(str(t_df.ds.max() + pd.Timedelta(1, 'D')), periods=v_periods, freq='D')
+    })
+    m = Prophet()
+    m.fit(t_df)
+    forecast = m.predict(new_v_df)
+    scores, ups, downs = tensor2score(
+            t_df.ds.tolist() + new_v_df.ds.tolist(),
+            [np.array(x) for x in t_df.y.tolist() + forecast.yhat.tolist()])
+
+    time_stamp = (scores.reset_index().date.astype('int')// 10 ** 6).tolist()
+    print(time_stamp)    
+    return Line(
+        time_stamp=time_stamp,
+        score=((scores.tgt_score.fillna(-1) * 100).astype('int32') / 100).tolist()
+    )

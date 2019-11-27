@@ -23,7 +23,7 @@ from scipy.signal import find_peaks
 Path.ls = lambda x: [o.name for o in x.iterdir()]
 
 class Predictor:
-    def __init__(self, images, n_cls=10, im_size=64, predict_len=180, im_mask=None):
+    def __init__(self, images, n_cls=20, im_size=32, predict_len=180, im_mask=None):
         self.dates = []
         self.files = []
         self.n_cls = n_cls
@@ -72,7 +72,7 @@ class Predictor:
                 data_im = np.array(im_tile)
                 ims.append(Image.fromarray(data_im*data_mask.astype('uint8')))
             # ims.append(im_tile)
-        data = np.array([np.array(img.resize((64, 64))) for img in ims])
+        data = np.array([np.array(img.resize((32, 32))) for img in ims])
         # Use mean of RGB as pixel value
         ts = np.array(data).mean(3)
         ts = ts.reshape((ts.shape[0], -1)).transpose()
@@ -89,28 +89,9 @@ class Predictor:
     def _predict(self, vals, i, df, periods, full_ds, draw=False, val=False):
         if vals.mean() < 1: return None
         df['y'] = [np.nan if x > 150 else x for x in vals]
-        new_df = pd.DataFrame({'ds': full_ds}).merge(df, how='left', on='ds')
-        new_df['y'] = new_df.set_index('ds').y.interpolate(method='time').tolist()
-        if val:
-            t_df, v_df = split(new_df, 0.9) 
-        else:
-            t_df = new_df
-
-        new_v_df = pd.DataFrame({
-            'ds': pd.date_range(str(t_df.ds.max() + pd.Timedelta(1, 'D')), periods=self.predict_len, freq='D')
-        }) 
-        m = Prophet()
-        m.fit(t_df)
-        forecast = m.predict(new_v_df)
-        if draw:
-            plt.figure()
-            ax = plt.subplot(1,1,1)
-            ax.plot(df.ds, df.y)
-            ax.plot(forecast.ds, forecast.yhat, '-r')
 
         scores, ups, downs = tensor2score(
-            t_df.ds.tolist() + new_v_df.ds.tolist(),
-            [np.array(x) for x in t_df.y.tolist() + forecast.yhat.tolist()])
+            df.ds, [np.array(x) for x in df.y.tolist()])
         return scores, ups, downs
     
     def draw_clusters(self):
@@ -138,7 +119,7 @@ class Predictor:
         pred = parallel(predict_runner, self.mean_ts, n_workers)
         print("--- %s seconds ---" % (time.time() - start_time))
         
-        print("scoring")
+        score_start_time = time.time()
         res_df = pd.DataFrame({'date':[]})
         for i, y in enumerate(pred):
             if y == None:
@@ -146,11 +127,13 @@ class Predictor:
                 continue
             temp = y[0].reset_index()[['date', 'tgt_score']].rename({'tgt_score': 'cls_'+str(i)}, axis=1)
             res_df = res_df.merge(temp, how='right', on=['date'])
-            
+        print("----------%s seconds " % (time.time() - score_start_time)) 
         res_df = self.df[['ds']].merge(res_df, how='left', left_on='ds',right_on='date').drop(columns='date')
         self.prediction = res_df
         return res_df
     def gen_heatmaps(self):
+        start_time = time.time()
+        print('generating heat map')
         op_files = []
         heatmaps = []
         xs = ys = np.linspace(0, self.im_size - 1, self.im_size)
@@ -167,27 +150,29 @@ class Predictor:
             time_stamp = row.ds.value // 10 ** 6
             heatmaps.append({
                 'timestamp': time_stamp,
-                'heatmap': np.stack([xv, yv, np.array(val).reshape(self.im_size, self.im_size)], 2)
+                'heatmap': (np.stack([xv, yv, np.array(val).reshape(self.im_size, self.im_size)], 2)*100).astype('int32')/100
             })
-        line_res = {}
-        for item0 in heatmaps:
-            ts = item0['timestamp']
-            for item1 in item0['heatmap'].reshape(item0['heatmap'].shape[0]*item0['heatmap'].shape[1], 3).tolist():
+        #line_res = {}
+        #for item0 in heatmaps:
+         #   ts = item0['timestamp']
+          #  for item1 in item0['heatmap'].reshape(item0['heatmap'].shape[0]*item0['heatmap'].shape[1], 3).tolist():
                 # print(item1)
-                x, y, val = item1
-                y = self.im_size - y - 1
-                loc_str = f'{int(x)}_{int(y)}'
-                if loc_str in line_res:
-                    pass
-                else:
-                    line_res[loc_str] = {}
-                if "x_value" not in line_res[loc_str]: 
-                    line_res[loc_str]["x_value"] = []
-                if "y_value" not in line_res[loc_str]: 
-                    line_res[loc_str]["y_value"] = []
-                line_res[loc_str]["x_value"].append(ts)
-                line_res[loc_str]["y_value"].append(val)
-        return heatmaps, line_res
+           #     x, y, val = item1
+            #    y = self.im_size - y - 1
+             #   loc_str = f'{int(x)}_{int(y)}'
+              #  if loc_str in line_res:
+               #     pass
+                #else:
+                 #   line_res[loc_str] = {}
+                #if "x_value" not in line_res[loc_str]: 
+                   # line_res[loc_str]["x_value"] = []
+                #if "y_value" not in line_res[loc_str]: 
+                 #   line_res[loc_str]["y_value"] = []
+                #line_res[loc_str]["x_value"].append(ts)
+                #line_res[loc_str]["y_value"].append(val)
+        
+        print("--- %s seconds ---" % (time.time() - start_time))
+        return heatmaps,{}
     
 def num_cpus()->int:
     "Get number of cpus"
@@ -250,12 +235,21 @@ def tensor2score(ts, datas):
     df = df.assign(tgt_score=np.NaN)
     df.loc[ups, 'tgt_score'] = 0.
     df.loc[downs, 'tgt_score'] = 1.
+    diffs = []
+    peaks = sorted(ups + downs)
+    for i, t in enumerate(peaks):
+        if i > 0:
+            diffs.append((t - peaks[i - 1]).days)
+    ewm = pd.Series(diffs).ewm(com=0.9).mean()
+    last_t = (df.index[-1] - np.max(ups+downs)).days
+
+    df.iloc[-1, -1] = last_t / ewm.iloc[-1]
     df = df.assign(
         tgt_score=df.tgt_score.interpolate(method='time')
     )
-    if (ups + downs):
-        df.loc[max(ups+downs):, 'tgt_score'] = np.NaN
-        df.loc[max(ups+downs):, 'tgt_phase'] = np.NaN
+    #if (ups + downs):
+    #    df.loc[max(ups+downs):, 'tgt_score'] = np.NaN
+    #    df.loc[max(ups+downs):, 'tgt_phase'] = np.NaN
     return df, ups, downs
 
 def draw_score(df, ups, downs, ax):

@@ -28,7 +28,7 @@ requirements: test_environment
 
 ## Install Python Dependencies
 debug:
-	docker run -it --rm -v `pwd`:/opt -p 5000:5000 $(IMAGE_VER) /bin/bash
+	docker run -it --rm -v `pwd`:/opt -p 80:5000 $(IMAGE_VER) /bin/bash
 
 ## Make Dataset
 data: requirements

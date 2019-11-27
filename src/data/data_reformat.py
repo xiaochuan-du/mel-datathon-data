@@ -38,7 +38,7 @@ def preprocess_pngs():
     return
 
 ################################ This is the main function ################################
-@functools.lru_cache()
+# @functools.lru_cache()
 def ROI_tifs(ROI, masked=True):
     """Based on input ROI and preprocess files, find relevant satellite images and clip them with ROI. 
     Save the clipped images on harddrive and return path informaiton and timestamp information
