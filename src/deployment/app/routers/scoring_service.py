@@ -53,11 +53,12 @@ class TileInfo(BaseModel):
 
 class TileQuery(BaseModel):
     type: str = "Feature"
-    geometry: dict = {"type": "Polygon",
-        "coordinates": [[148.60709030303114, -20.540043246963264],
-        [148.69607543743531, -20.539590412428996],
-        [148.6865658493269, -20.595756032466892],
-        [148.6275658455197,-20.606209452942387]]}
+    geometry: dict 
+    #= {"type": "Polygon",
+    #    "coordinates": [[148.60709030303114, -20.540043246963264],
+    #    [148.69607543743531, -20.539590412428996],
+    #    [148.6865658493269, -20.595756032466892],
+    #    [148.6275658455197,-20.606209452942387]]}
     properties: dict = {"name": ""}    
 
 
@@ -174,9 +175,10 @@ async def get_predict_line(line_query: LineQuery):
     scores, ups, downs = tensor2score(
             t_df.ds.tolist() + new_v_df.ds.tolist(),
             [np.array(x) for x in t_df.y.tolist() + forecast.yhat.tolist()])
+    scores.loc[scores.tgt_phase == 'croping', 'tgt_score'] = 0
 
     time_stamp = (scores.reset_index().date.astype('int')// 10 ** 6).tolist()
-    print(time_stamp)    
+    
     return Line(
         time_stamp=time_stamp,
         score=((scores.tgt_score.fillna(-1) * 100).astype('int32') / 100).tolist()

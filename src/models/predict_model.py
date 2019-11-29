@@ -23,10 +23,11 @@ from scipy.signal import find_peaks
 Path.ls = lambda x: [o.name for o in x.iterdir()]
 
 class Predictor:
-    def __init__(self, images, n_cls=20, im_size=32, predict_len=180, im_mask=None):
+    def __init__(self, images, n_cls=10, im_size=32, predict_len=180, im_mask=None):
         self.dates = []
         self.files = []
         self.n_cls = n_cls
+        self.im_origin_size = 512
         self.im_size = im_size
         self.im_mask = im_mask
         self.predict_len = predict_len
@@ -72,7 +73,8 @@ class Predictor:
                 data_im = np.array(im_tile)
                 ims.append(Image.fromarray(data_im*data_mask.astype('uint8')))
             # ims.append(im_tile)
-        data = np.array([np.array(img.resize((32, 32))) for img in ims])
+        self.im_origin_size = np.mean([ims[0].size[0], ims[0].size[1]])
+        data = np.array([np.array(img.resize((32,32))) for img in ims])
         # Use mean of RGB as pixel value
         ts = np.array(data).mean(3)
         ts = ts.reshape((ts.shape[0], -1)).transpose()
@@ -83,15 +85,22 @@ class Predictor:
         '''
             clusterify time series of pixels
         '''
+        print(self.im_origin_size)
+        self.n_cls = int(self.im_origin_size / 20)
+        self.n_cls = np.max([self.n_cls, 20])
+        self.n_cls = np.min([self.n_cls, 400])
+        self.n_cls = 32
         kmeans = KMeans(self.n_cls, random_state=0).fit(ts)
         return kmeans.predict(ts)
     
     def _predict(self, vals, i, df, periods, full_ds, draw=False, val=False):
-        if vals.mean() < 1: return None
+        if vals.mean() < 10: 
+            return None
         df['y'] = [np.nan if x > 150 else x for x in vals]
 
         scores, ups, downs = tensor2score(
             df.ds, [np.array(x) for x in df.y.tolist()])
+
         return scores, ups, downs
     
     def draw_clusters(self):
@@ -112,6 +121,9 @@ class Predictor:
         print("clusterify time series")
         self.ts_cls = self._clusterify(self.ts)
         self.mean_ts = [self.ts[self.ts_cls==i].mean(0) for i in range(self.n_cls)]
+
+        min_cls = np.array(self.mean_ts).mean(1).argmin()
+        self.mean_ts[min_cls] = np.zeros(len(self.mean_ts[0]))
         
         print("start predicting")
         predict_runner = partial(self._predict, df=self.df, periods=self.periods,full_ds=self.full_ds)

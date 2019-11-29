@@ -62,7 +62,6 @@ def ROI_tifs(ROI, masked=True):
     ROI_tiles_XY = list(set(ROI_tiles_XY) - xy_w_geo_wo_tif)
     tasks = tif_list.loc[ROI_tiles_XY].reset_index()
     dates_unix = pd.to_datetime(tasks['date']).sort_values().unique().astype(np.int64) // 10**6
-    
     if len(ROI_tiles_XY)==0:
         print("No tiles matched to the ROI. Please select another region.")
         # FIXME: what is the API if no corresponding tile is found?
